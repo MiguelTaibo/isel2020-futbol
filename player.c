@@ -5,7 +5,7 @@
 #include <pthread.h>
 #include <stddef.h>
 
-// comprobacions
+/* comprobacions */
 static int key_up_not_top (fsm_t* this) {
  player_t* p = (player_t*) this;
  return (p->pos_y > MIN_Y) && (p->flags_key & FLAG_UP);
@@ -26,7 +26,7 @@ static int key_right_not_right (fsm_t* this) {
  return (p->pos_x < MAX_X) && (p->flags_key & FLAG_RIGHT);
 }
 
-//transiciones
+/* transiciones */
 static void move_up (fsm_t* this) {
  player_t* p = (player_t*) this;
  ((p->flags_key) &= ~FLAG_UP);
@@ -67,9 +67,9 @@ void player_init (player_t* this, int id) {
  this->flags_key = 0;
 }
 
-fsm_t* fsm_new_player (int id)
+player_t* fsm_new_player (int id)
 {
  player_t* this = (player_t*) malloc (sizeof (player_t));
  player_init (this, id);
- return (fsm_t*) this;
+ return this;
 }

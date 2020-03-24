@@ -31,5 +31,3 @@ Requisitos:
     j - left
 
     l - right
-
-Hacemos print del mapa con la barra espaciadora.

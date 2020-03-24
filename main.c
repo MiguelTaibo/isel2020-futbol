@@ -1,9 +1,43 @@
 #include "player.h"
-#include <time.h>
 #include <stdio.h>
-#include <pthread.h>
 #include <stdlib.h>
-//TIME MANAGEMENT
+#include <time.h>
+#include <termios.h>
+#include <sys/select.h>
+
+
+/* RAW MODE */
+static struct termios orig_termios;
+void disable_raw_mode()
+{
+  if (tcsetattr(0, TCSAFLUSH, &orig_termios) == -1)
+    perror ("tcsetattr");
+}
+void enable_raw_mode()
+{
+  if (tcgetattr(0, &orig_termios) == -1) perror("tcgetattr");
+  atexit(disable_raw_mode);
+  struct termios raw = orig_termios;
+  raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+  raw.c_oflag &= ~(OPOST);
+  raw.c_cflag |= (CS8);
+  raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+  raw.c_cc[VMIN] = 0;
+  raw.c_cc[VTIME] = 1;
+  if (tcsetattr(0, TCSAFLUSH, &raw) == -1) perror("tcsetattr");
+}
+
+/* TIME MANAGEMENT */
+int timespec_less (struct timespec* a, struct timespec* b);
+void timespec_add (struct timespec* res, struct timespec* a, struct timespec* b);
+void timespec_sub (struct timespec* res, struct timespec* a, struct timespec* b);
+
+int timespec_less (struct timespec *a, struct timespec *b)
+{
+  return (a->tv_sec < b->tv_sec) ||
+    ((a->tv_sec == b->tv_sec) && (a->tv_nsec < b->tv_nsec));
+}
+
 void timespec_sub (struct timespec *res, struct timespec *a, struct timespec *b)
 {
 	res->tv_sec = a->tv_sec - b->tv_sec;
@@ -13,7 +47,6 @@ void timespec_sub (struct timespec *res, struct timespec *a, struct timespec *b)
 		res->tv_nsec += 1000000000;
 	}
 }
-
 void timespec_add (struct timespec *res, struct timespec *a, struct timespec *b)
 {
 	res->tv_sec = a->tv_sec + b->tv_sec;
@@ -23,7 +56,6 @@ void timespec_add (struct timespec *res, struct timespec *a, struct timespec *b)
 		res->tv_nsec -= 1000000000;
 	}
 }
-
 void delay_until (struct timespec* next_activation)
 {
 	struct timespec resto, now;
@@ -32,106 +64,156 @@ void delay_until (struct timespec* next_activation)
 	while (nanosleep(&resto,&resto)>0);
 }
 
-//THREAD TO READ KEYBOARD
-struct compute_prime_struct;
-typedef struct compute_prime_struct compute_prime_struct;
-struct compute_prime_struct {
-  player_t *p1;
-  player_t *p2;
-};
 
-void printMap(player_t* p1, player_t* p2)
+player_t* p1 = NULL;
+player_t* p2 = NULL;
+int pre1_x = UMBRAL;
+int pre1_y = MAX_Y+UMBRAL;
+int pre2_x = UMBRAL;
+int pre2_y = MAX_Y+UMBRAL;
+
+/* Toma de Datos */
+struct timespec max = {0, 0};
+
+
+int key_pressed (void)
 {
-    int x1=p1->pos_x;
-    int y1=p1->pos_y;
-    int x2=p2->pos_x;
-    int y2=p2->pos_y;
+  struct timeval timeout = { 0, 0 };
+  fd_set rd_fdset;
+  FD_ZERO(&rd_fdset);
+  FD_SET(0, &rd_fdset);
+  return select(1, &rd_fdset, NULL, NULL, &timeout) > 0;
+}
+void key_process (int ch)
+{
+  switch (ch) {
+  case 'w': ((p1->flags_key) |= FLAG_UP); break;
+  case 's': ((p1->flags_key) |= FLAG_DOWN); break;
+  case 'a': ((p1->flags_key) |= FLAG_LEFT); break;
+  case 'd': ((p1->flags_key) |= FLAG_RIGHT); break;
 
-    printf("XXXXXXXXXXXXXXXXXXXXXXXX\n");
-    char A[20];
-    for (int i=0; i<22;i++) {
-      for (int j=0; j<22; j++) {
-          if (i==y1 && j==x1) {
-            A[j]='1';
-          } else if (i==y2 && j==x2) {
-            A[j]='2';
-          } else {
-            A[j]='_';
-          }
-      }
-      printf("X%sX\n",A);
-    }
-    printf("XXXXXXXXXXXXXXXXXXXXXXXX\n");
+	case 'i': ((p2->flags_key) |= FLAG_UP); break;
+  case 'k': ((p2->flags_key) |= FLAG_DOWN); break;
+  case 'j': ((p2->flags_key) |= FLAG_LEFT); break;
+  case 'l': ((p2->flags_key) |= FLAG_RIGHT); break;
+
+	case 'q':
+		printf("\e[%d;0f",MAX_Y+2*UMBRAL+3);
+		printf("tiempo de ejecucion maximo del refresco de pantalla: %d.%.9d (s)\n",max.tv_sec,max.tv_nsec);
+		printf ("\e0\e[?25h");
+		printf("\e[%d;0f",MAX_Y+2*UMBRAL+5);
+		exit(0); break;
+  }
 }
 
-void *checkInputsThread (void *args)
+void setup_screen()
 {
-
-	compute_prime_struct *actual_args = args;
-  player_t* p1 = (player_t*) actual_args->p1;
-  player_t* p2 = (player_t*) actual_args->p2;
-
-  // Codigo de la funcion
-	char ss;
-	//struct timespec segundo = {0,0};
-
-	while (scanf("%c",&ss)) {
-		if (ss=='w') {
-			((p1->flags_key) |= FLAG_UP);
-		}	else if (ss=='a') {
-      ((p1->flags_key) |= FLAG_LEFT);
-    }	else if (ss=='s') {
-      ((p1->flags_key) |= FLAG_DOWN);
-    }	else if (ss=='d') {
-      ((p1->flags_key) |= FLAG_RIGHT);
-    }	else if (ss=='i') {
-      ((p2->flags_key) |= FLAG_UP);
-    }	else if (ss=='j') {
-      ((p2->flags_key) |= FLAG_LEFT);
-    }	else if (ss=='k') {
-      ((p2->flags_key) |= FLAG_DOWN);
-    }	else if (ss=='l') {
-      ((p2->flags_key) |= FLAG_RIGHT);
-    } else if (ss=='q') {
-			exit(-1);
-    } else if (ss==' ') {
-      printMap(p1, p2);
-		}	else if (ss=='\n'){
-			continue;
-		}	else {
-      printf("%d\n",p1->flags_key );
-			printf("Ver Instrucciones \n");
-		}
-		//nanosleep(&segundo,&segundo);
+	printf ("\e7\e[?25l");
+	printf("\e[2J\e[%d;0f",UMBRAL-1);
+	for (int i=-1; i<MAX_X+2;i++) {
+		printf("\e[%d;%df%c",UMBRAL-1,i+UMBRAL,'X');
+		printf("\e[%d;%df%c",UMBRAL+MAX_Y+1,i+UMBRAL,'X');
 	}
-	pthread_exit(NULL);
+	for (int j=0; j<MAX_Y+1; j++) {
+		printf("\e[%d;%df%c",j+UMBRAL,UMBRAL-1,'X');
+		printf("\e[%d;%df%c",j+UMBRAL,UMBRAL+MAX_X+1,'X');
+		for (int i=0; i<MAX_X+1; i++) {
+			printf("\e[%d;%df%c",j+UMBRAL,i+UMBRAL,' ');
+		}
+	}
 }
 
+void screen_refresh(player_t* p1,player_t* p2)
+{
+		if (pre1_x != p1->pos_x || pre1_y != p1->pos_y)  {
+			printf("\e[%d;%df%c",pre1_y+UMBRAL,pre1_x+UMBRAL,' ');
+			pre1_x = p1->pos_x;
+			pre1_y = p1->pos_y;
+			printf("\e[%d;%df%c",pre1_y+UMBRAL,pre1_x+UMBRAL,'1');
+			printf("\e[%d;%df%c",pre2_y+UMBRAL,pre2_x+UMBRAL,'2');
+		}
+		if (pre2_x != p2->pos_x || pre2_y != p2->pos_y) {
+			printf("\e[%d;%df%c",pre2_y+UMBRAL,pre2_x+UMBRAL,' ');
+			pre2_x = p2->pos_x;
+			pre2_y = p2->pos_y;
+			printf("\e[%d;%df%c",pre2_y+UMBRAL,pre2_x+UMBRAL,'2');
+			printf("\e[%d;%df%c",pre1_y+UMBRAL,pre1_x+UMBRAL,'1');
+		}
+		printf("\e[%d;%dfp1:(%.2d,%.2d)", MAX_Y+2*UMBRAL, UMBRAL, p1->pos_x, p1->pos_y);
+		printf("\e[%d;%dfp2:(%.2d,%.2d)", MAX_Y+2*UMBRAL+1, UMBRAL, p2->pos_x, p2->pos_y);
+
+}
 
 int main (void)
 {
 
-  player_t* p1 = fsm_new_player(1);
-  player_t* p2 = fsm_new_player(2);
-
-  compute_prime_struct *args = malloc(sizeof *args);
-  args->p1=p1;
-  args->p2=p2;
-
-  pthread_t thInputs;
-	if ( 0 != pthread_create(&thInputs, NULL, checkInputsThread, args) ) {
-		printf("no empezamos thread\n");
-	}
+  p1 = fsm_new_player(1);
+  p2 = fsm_new_player(2);
 
   struct timespec next;
   clock_gettime(CLOCK_REALTIME, &next);
-	struct timespec T = {0, 50000000}; //1/20 segundos
+	struct timespec T = {0, 800000};
+
+
+	/* TOMA de datos */
+	struct timespec t_inicial, t_final, temp;
+
+	enable_raw_mode();
+	setup_screen();
+
+	int frame = 0;
 
   while (1) {
-    fsm_fire ((fsm_t*)p1);
-    fsm_fire ((fsm_t*)p2);
+
+		switch (frame) {
+			case 0:
+				if (key_pressed()) {
+					key_process(getchar());
+				}
+				fsm_fire ((fsm_t*)p1);
+				fsm_fire ((fsm_t*)p2);
+				break;
+			case 1:
+				if (key_pressed()) {
+					key_process(getchar());
+				}
+				fsm_fire ((fsm_t*)p1);
+				fsm_fire ((fsm_t*)p2);
+				break;
+			case 2:
+				if (key_pressed()) {
+					key_process(getchar());
+				}
+				fsm_fire ((fsm_t*)p1);
+				fsm_fire ((fsm_t*)p2);
+				break;
+			case 3:
+				if (key_pressed())
+					key_process(getchar());
+				fsm_fire ((fsm_t*)p1);
+				fsm_fire ((fsm_t*)p2);
+				break;
+			case 4:
+
+				if (key_pressed())
+					key_process(getchar());
+				fsm_fire ((fsm_t*)p1);
+				fsm_fire ((fsm_t*)p2);
+
+				/* Toma de datos */
+				clock_gettime(CLOCK_REALTIME, &t_inicial);
+				screen_refresh(p1,p2);
+				clock_gettime(CLOCK_REALTIME, &t_final);
+				timespec_sub(&temp,&t_final,&t_inicial);
+				if (timespec_less(&max,&temp)) {
+					max = temp;
+				}
+				break;
+		}
 
     timespec_add(&next,&next,&T);
     delay_until(&next);
-  }
+		//printf("p1:(%d,%d);;p2:(%d,%d)\r\n", p1->pos_x, p1->pos_y, p2->pos_x, p2->pos_y);
+		frame = (frame+1)%5;
+	}
 }
