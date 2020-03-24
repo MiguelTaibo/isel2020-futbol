@@ -99,7 +99,7 @@ void key_process (int ch)
 
 	case 'q':
 		printf("\e[%d;0f",MAX_Y+2*UMBRAL+3);
-		printf("tiempo de ejecucion maximo del refresco de pantalla: %d.%.9d (s)\n",max.tv_sec,max.tv_nsec);
+		printf("tiempo de ejecucion maximo del refresco de pantalla: %ld.%.9ld (s)\n",max.tv_sec,max.tv_nsec);
 		printf ("\e0\e[?25h");
 		printf("\e[%d;0f",MAX_Y+2*UMBRAL+5);
 		exit(0); break;
